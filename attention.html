@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>attention.js — o código por trás do vício</title>
+<style>
+  :root{
+    --void:#0A0C10;
+    --panel:#12151B;
+    --panel-alt:#171B22;
+    --line:#232833;
+    --text:#D6DEE6;
+    --dim:#6B7685;
+    --dimmer:#454C58;
+    --teal:#5EEAD4;
+    --alert:#FF6B4A;
+    --amber:#FFB84D;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--void);
+    color:var(--text);
+    font-family:var(--sans);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--teal); color:var(--void);}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; gap:10px;
+    padding:10px 18px;
+    background:rgba(10,12,16,0.85);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+    font-family:var(--mono);
+    font-size:12.5px;
+    color:var(--dim);
+  }
+  .dot{width:10px;height:10px;border-radius:50%;}
+  .dot.r{background:#FF5F57;} .dot.y{background:#FEBC2E;} .dot.g{background:#28C840;}
+  .topbar .path{margin-left:8px;}
+  .topbar .path b{color:var(--text); font-weight:500;}
+
+  /* ---------- layout ---------- */
+  .wrap{
+    display:grid;
+    grid-template-columns:220px 1fr;
+    max-width:1180px;
+    margin:0 auto;
+  }
+  @media (max-width:840px){
+    .wrap{grid-template-columns:1fr;}
+    .sidebar{
+      position:sticky; top:41px; z-index:40;
+      display:flex; overflow-x:auto;
+      border-right:none; border-bottom:1px solid var(--line);
+      background:var(--void);
+    }
+    .sidebar a{white-space:nowrap; border-left:none !important; border-bottom:2px solid transparent;}
+    .sidebar a.active{border-bottom:2px solid var(--teal) !important;}
+  }
+
+  .sidebar{
+    border-right:1px solid var(--line);
+    padding:22px 0;
+    height:fit-content;
+    position:sticky; top:41px;
+    align-self:start;
+  }
+  .sidebar .label{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.12em;
+    color:var(--dimmer); text-transform:uppercase; padding:0 18px 10px;
+  }
+  .sidebar a{
+    display:block;
+    padding:9px 18px;
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--dim);
+    text-decoration:none;
+    border-left:2px solid transparent;
+    white-space:nowrap;
+  }
+  .sidebar a:hover{color:var(--text);}
+  .sidebar a.active{color:var(--teal); border-left:2px solid var(--teal); background:var(--panel);}
+
+  main{padding:0 0 100px;}
+
+  /* ---------- hero ---------- */
+  .hero{
+    padding:70px 40px 50px;
+    border-bottom:1px solid var(--line);
+  }
+  .hero .kicker{
+    font-family:var(--mono); font-size:12.5px; color:var(--alert);
+    letter-spacing:.08em; margin-bottom:18px; display:flex; align-items:center; gap:8px;
+  }
+  .hero .kicker::before{content:"●"; animation:blink 1.4s infinite;}
+  @keyframes blink{50%{opacity:.15;}}
+  .hero h1{
+    font-family:var(--mono);
+    font-size:clamp(28px,5vw,48px);
+    font-weight:600;
+    line-height:1.15;
+    margin:0 0 20px;
+    max-width:780px;
+  }
+  .hero h1 .g{color:var(--teal);}
+  .hero p.sub{
+    font-size:17px; color:var(--dim); max-width:580px; margin:0 0 28px;
+  }
+  .terminal{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    max-width:640px;
+    overflow:hidden;
+    font-family:var(--mono);
+    font-size:13px;
+  }
+  .terminal .bar{
+    display:flex; gap:6px; padding:10px 12px;
+    border-bottom:1px solid var(--line);
+  }
+  .terminal .body{padding:16px 18px; color:var(--dim);}
+  .terminal .body .prompt{color:var(--teal);}
+  .terminal .body .out{color:var(--text);}
+  .caret{display:inline-block; width:8px; height:15px; background:var(--teal); vertical-align:-2px; animation:blink 1s steps(1) infinite;}
+
+  /* ---------- section / file blocks ---------- */
+  .file{
+    padding:64px 40px;
+    border-bottom:1px solid var(--line);
+    scroll-margin-top:60px;
+  }
+  .file .filehead{
+    display:flex; align-items:baseline; gap:12px; margin-bottom:6px;
+  }
+  .file .filehead .num{
+    font-family:var(--mono); color:var(--dimmer); font-size:14px;
+  }
+  .file .filehead h2{
+    font-family:var(--mono); font-size:20px; margin:0; font-weight:600;
+  }
+  .file .tag{
+    font-family:var(--mono); font-size:11px; padding:2px 8px; border-radius:99px;
+    border:1px solid var(--line); color:var(--dim);
+  }
+  .file .desc{color:var(--dim); max-width:640px; margin:14px 0 26px; font-size:15.5px;}
+
+  .code{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow-x:auto;
+    font-family:var(--mono);
+    font-size:13.5px;
+    margin-bottom:22px;
+  }
+  .code .cline{
+    display:flex; padding:2px 0;
+  }
+  .code .cline:hover{background:var(--panel-alt);}
+  .code .ln{
+    width:38px; text-align:right; padding-right:16px; color:var(--dimmer); user-select:none; flex-shrink:0;
+  }
+  .code .cc{white-space:pre; color:var(--text);}
+  .code .pad{padding:14px 0;}
+  .kw{color:#C792EA;} .fn{color:#82AAFF;} .str{color:var(--amber);} .cm{color:var(--dimmer); font-style:italic;} .nu{color:#F78C6C;}
+
+  .reveal{
+    border-left:3px solid var(--alert);
+    background:rgba(255,107,74,0.06);
+    padding:14px 18px;
+    border-radius:0 6px 6px 0;
+    font-size:15px;
+    max-width:640px;
+  }
+  .reveal b{color:var(--alert);}
+
+  .ethical .reveal{border-left-color:var(--teal); background:rgba(94,234,212,0.06);}
+  .ethical .reveal b{color:var(--teal);}
+
+  /* ---------- interactive demo ---------- */
+  .demo{
+    max-width:640px;
+    border:1px solid var(--line);
+    background:var(--panel);
+    border-radius:8px;
+    padding:20px 22px;
+    margin:0 0 22px;
+  }
+  .demo .demolabel{font-family:var(--mono); font-size:11.5px; color:var(--dimmer); letter-spacing:.08em; margin-bottom:12px;}
+  .demo button{
+    font-family:var(--mono); font-size:13px; background:var(--void);
+    border:1px solid var(--teal); color:var(--teal);
+    padding:9px 16px; border-radius:6px; cursor:pointer;
+  }
+  .demo button:hover{background:var(--teal); color:var(--void);}
+  .demo button:disabled{opacity:.4; cursor:default;}
+  .demo .status{font-family:var(--mono); font-size:13px; color:var(--dim); margin-top:14px; min-height:18px;}
+  .phone-notif{
+    margin-top:14px; max-width:340px;
+    background:#1C2029; border:1px solid var(--line); border-radius:10px;
+    padding:12px 14px; display:none; align-items:flex-start; gap:10px;
+    font-family:var(--sans); font-size:13.5px;
+  }
+  .phone-notif.show{display:flex; animation:slidein .25s ease;}
+  @keyframes slidein{from{transform:translateY(-8px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .phone-notif .ic{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--alert),var(--amber)); flex-shrink:0;}
+  .phone-notif .txt b{display:block; color:var(--text);}
+  .phone-notif .txt span{color:var(--dim); font-size:12.5px;}
+
+  /* ---------- closing ---------- */
+  .closing{padding:64px 40px 20px;}
+  .closing h2{font-family:var(--mono); font-size:22px; margin:0 0 8px;}
+  .closing p{color:var(--dim); max-width:600px; margin:0 0 30px;}
+  .cards{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; max-width:900px;}
+  @media (max-width:700px){.cards{grid-template-columns:1fr;}}
+  .card{
+    border:1px solid var(--line); background:var(--panel);
+    border-radius:8px; padding:20px;
+  }
+  .card .n{font-family:var(--mono); color:var(--teal); font-size:13px; margin-bottom:10px;}
+  .card p{color:var(--text); font-size:14.5px; margin:0; opacity:.9;}
+
+  .print-card{
+    max-width:640px; margin-top:34px;
+    border:1px dashed var(--dimmer); border-radius:8px;
+    padding:20px 22px; font-family:var(--mono); font-size:13px; color:var(--dim);
+  }
+  .print-card .t{color:var(--teal); margin-bottom:8px;}
+
+  footer{
+    padding:30px 40px 60px; color:var(--dimmer); font-family:var(--mono); font-size:12px;
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important;}
+    html{scroll-behavior:auto;}
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="path">~/upxp/pacex &gt; <b>attention.js</b></span>
+  </div>
+
+  <div class="wrap">
+    <nav class="sidebar" id="sidebar">
+      <div class="label">arquivos</div>
+      <a href="#hero" class="navlink" data-target="hero">00_intro.md</a>
+      <a href="#scroll" class="navlink" data-target="scroll">01_scroll_infinito.js</a>
+      <a href="#recompensa" class="navlink" data-target="recompensa">02_recompensa_variavel.js</a>
+      <a href="#autoplay" class="navlink" data-target="autoplay">03_autoplay.js</a>
+      <a href="#etico" class="navlink" data-target="etico">04_codigo_etico.js</a>
+      <a href="#saida" class="navlink" data-target="saida">05_saida.md</a>
+    </nav>
+
+    <main>
+      <section class="hero" id="hero">
+        <div class="kicker">LIVE — UPXP 2026 · PACEX II · ADS</div>
+        <h1>O código por trás <span class="g">do vício.</span></h1>
+        <p class="sub">Você já achou que era "falta de força de vontade" ficar horas no celular. Na verdade, é engenharia de software — funções escritas de propósito pra isso acontecer. Aqui você lê o pseudocódigo real.</p>
+        <div class="terminal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+          <div class="body">
+            <div><span class="prompt">&gt;</span> <span class="out">tempo_medio_de_tela_brasil()</span></div>
+            <div style="margin:6px 0;">→ <span class="out">≈ 9h/dia por usuário</span></div>
+            <div><span class="prompt">&gt;</span> <span class="out">motivo</span> = "falta de força de vontade"?</div>
+            <div style="margin:6px 0;">→ <span class="out">false. motivo = design_intencional()</span></div>
+            <div><span class="prompt">&gt;</span> <span class="caret"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="file" id="scroll">
+        <div class="filehead"><span class="num">01</span><h2>scroll_infinito.js</h2><span class="tag">feed</span></div>
+        <p class="desc">O feed nunca "acaba" de propósito. Não existe uma tela de fim de conteúdo — o app sempre carrega mais um post, mais um vídeo, mais um card.</p>
+        <div class="code">
+          <div class="pad">
+            <div class="cline"><span class="ln">1</span><span class="cc"><span class="kw">enquanto</span> (usuario == <span class="str">"online"</span>) {</span></div>
+            <div class="cline"><span class="ln">2</span><span class="cc">    <span class="fn">carregar</span>(proximo_conteudo);</span></div>
+            <div class="cline"><span class="ln">3</span><span class="cc">    <span class="cm">// nunca retorna null</span></span></div>
+            <div class="cline"><span class="ln">4</span><span class="cc">    <span class="cm">// nunca existe "fim do feed"</span></span></div>
+            <div class="cline"><span class="ln">5</span><span class="cc">}</span></div>
+          </div>
+        </div>
+        <div class="reveal"><b>revelação:</b> a decisão de "parar de rolar" foi retirada do fluxo. Quem decide quando parar é você — não a interface — mas ela é feita pra nunca te lembrar disso.</div>
+      </section>
+
+      <section class="file" id="recompensa">
+        <div class="filehead"><span class="num">02</span><h2>recompensa_variavel.js</h2><span class="tag">notificações</span></div>
+        <p class="desc">O mesmo algoritmo por trás das máquinas caça-níqueis de cassino. A recompensa chega de forma imprevisível — e é isso que mais ativa a dopamina.</p>
+        <div class="code">
+          <div class="pad">
+            <div class="cline"><span class="ln">1</span><span class="cc"><span class="kw">se</span> (<span class="fn">aleatorio</span>() &lt; <span class="nu">0.3</span>) {</span></div>
+            <div class="cline"><span class="ln">2</span><span class="cc">    <span class="fn">notificar</span>(agora);</span></div>
+            <div class="cline"><span class="ln">3</span><span class="cc">} <span class="kw">senao</span> {</span></div>
+            <div class="cline"><span class="ln">4</span><span class="cc">    <span class="fn">atrasar</span>(minutos_aleatorios);</span></div>
+            <div class="cline"><span class="ln">5</span><span class="cc">    <span class="cm">// você espera sem saber quando</span></span></div>
+            <div class="cline"><span class="ln">6</span><span class="cc">}</span></div>
+          </div>
+        </div>
+        <div class="reveal"><b>revelação:</b> recompensa previsível vicia pouco. Recompensa <i>imprevisível</i> vicia muito — é literalmente a lógica de um caça-níquel, aplicada a mensagens e curtidas.</div>
+
+        <div class="demo" style="margin-top:26px;">
+          <div class="demolabel">DEMO AO VIVO — execute a função acima</div>
+          <button id="runDemo">executar notificar()</button>
+          <div class="status" id="demoStatus">clique pra simular o algoritmo rodando em tempo real.</div>
+          <div class="phone-notif" id="phoneNotif">
+            <div class="ic"></div>
+            <div class="txt"><b>Nova notificação</b><span id="notifText">alguém curtiu seu post</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="file" id="autoplay">
+        <div class="filehead"><span class="num">03</span><h2>autoplay.js</h2><span class="tag">vídeo</span></div>
+        <p class="desc">Quando um vídeo termina, o próximo já começa sozinho. A pausa natural — o momento em que você pensaria "quero mesmo continuar?" — foi removida do código.</p>
+        <div class="code">
+          <div class="pad">
+            <div class="cline"><span class="ln">1</span><span class="cc"><span class="fn">ao_terminar</span>(video_atual, () =&gt; {</span></div>
+            <div class="cline"><span class="ln">2</span><span class="cc">    <span class="fn">tocar</span>(proximo_video);</span></div>
+            <div class="cline"><span class="ln">3</span><span class="cc">    <span class="cm">// decisão do usuário: pulada</span></span></div>
+            <div class="cline"><span class="ln">4</span><span class="cc">});</span></div>
+          </div>
+        </div>
+        <div class="reveal"><b>revelação:</b> parar exige uma ação ativa (fechar o app). Continuar não exige nada. A inércia foi programada a favor do "continuar assistindo".</div>
+      </section>
+
+      <section class="file ethical" id="etico">
+        <div class="filehead"><span class="num">04</span><h2>codigo_etico.js</h2><span class="tag">contraponto</span></div>
+        <p class="desc">Nada disso é inevitável. O mesmo conhecimento técnico pode ser usado pra devolver o controle ao usuário — é uma escolha de quem programa.</p>
+        <div class="code">
+          <div class="pad">
+            <div class="cline"><span class="ln">1</span><span class="cc"><span class="kw">se</span> (tempo_de_uso &gt; limite_diario) {</span></div>
+            <div class="cline"><span class="ln">2</span><span class="cc">    <span class="fn">mostrar_lembrete</span>(<span class="str">"Hora de uma pausa?"</span>);</span></div>
+            <div class="cline"><span class="ln">3</span><span class="cc">    <span class="fn">pausar_autoplay</span>();</span></div>
+            <div class="cline"><span class="ln">4</span><span class="cc">}</span></div>
+          </div>
+        </div>
+        <div class="reveal"><b>revelação:</b> engenharia de software não é neutra — ela carrega a intenção de quem a escreve. Entender o código é o primeiro passo pra escolher por si mesmo.</div>
+      </section>
+
+      <section class="closing" id="saida">
+        <h2>05_saida.md</h2>
+        <p>Leve 3 ajustes práticos — funcionam no seu celular agora, hoje.</p>
+        <div class="cards">
+          <div class="card"><div class="n">01</div><p>Desative o autoplay nos apps de vídeo que você mais usa.</p></div>
+          <div class="card"><div class="n">02</div><p>Silencie notificações não essenciais — corta a "recompensa variável".</p></div>
+          <div class="card"><div class="n">03</div><p>Ative o lembrete de tempo de uso diário no seu celular.</p></div>
+        </div>
+        <div class="print-card">
+          <div class="t">// cartão para impressão</div>
+          Isso não é acidente. É engenharia de software.<br>
+          Agora você sabe ler o código.
+        </div>
+      </section>
+
+      <footer>
+        <span>PACEX II — ADS — UPXP 2026</span>
+        <span>attention.js v1.0</span>
+      </footer>
+    </main>
+  </div>
+
+<script>
+  // scrollspy
+  const links = document.querySelectorAll('.navlink');
+  const sections = Array.from(links).map(l => document.getElementById(l.dataset.target));
+  const spy = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        links.forEach(l=>l.classList.remove('active'));
+        const active = document.querySelector(`.navlink[data-target="${e.target.id}"]`);
+        if(active) active.classList.add('active');
+      }
+    });
+  }, {rootMargin:"-40% 0px -55% 0px"});
+  sections.forEach(s => s && spy.observe(s));
+
+  // notificacao variavel demo
+  const btn = document.getElementById('runDemo');
+  const status = document.getElementById('demoStatus');
+  const notif = document.getElementById('phoneNotif');
+  const notifText = document.getElementById('notifText');
+  const msgs = [
+    "alguém curtiu seu post",
+    "novo comentário na sua foto",
+    "3 pessoas visualizaram seu story",
+    "alguém começou a seguir você"
+  ];
+
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    notif.classList.remove('show');
+    const instant = Math.random() < 0.3;
+    if(instant){
+      status.textContent = "aleatorio() < 0.3 → notificar(agora)";
+      fireNotif();
+    } else {
+      const delay = 1200 + Math.random()*2600;
+      status.textContent = `aleatorio() ≥ 0.3 → atrasar(${(delay/1000).toFixed(1)}s)... esperando`;
+      setTimeout(fireNotif, delay);
+    }
+  });
+
+  function fireNotif(){
+    notifText.textContent = msgs[Math.floor(Math.random()*msgs.length)];
+    notif.classList.add('show');
+    status.textContent = "notificação disparada — repare que você não sabia quando viria.";
+    setTimeout(()=>{ btn.disabled = false; }, 900);
+  }
+</script>
+</body>
+</html>
